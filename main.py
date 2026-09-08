@@ -20,6 +20,7 @@ import sys
 from core import enumerate_subdomains, resolve_alive, confidence_score
 from sources import ALL_SOURCES
 from port_scanner import scan_ports, parse_port_spec
+from dir_bruteforce import brute_directory, load_wordlist
 from utils import print_banner, print_status, print_error, color
 
 
@@ -139,6 +140,7 @@ def show_menu(use_color: bool) -> str:
     print()
     print(color("  [1] Subdomain Find", "cyan", use_color))
     print(color("  [2] Port Scanner", "cyan", use_color))
+    print(color("  [3] Directory / File Bruteforcer", "cyan", use_color))
     print(color("  [0] Exit", "dim", use_color))
     print()
     try:
@@ -214,6 +216,48 @@ async def handle_port_scanner_menu(use_color: bool):
         print_status(f"no open ports found on {host}", use_color)
 
 
+async def handle_dir_bruteforce_menu(use_color: bool):
+    base_url = input("\nTarget base URL (e.g. https://example.com): ").strip()
+    if not base_url:
+        print_error("no URL given", use_color)
+        return
+    if not base_url.startswith(("http://", "https://")):
+        base_url = "https://" + base_url
+
+    wl_path = input("Custom wordlist file (blank = built-in ~45 common paths): ").strip()
+    try:
+        words = load_wordlist(wl_path or None)
+    except FileNotFoundError:
+        print_error(f"wordlist not found: {wl_path}", use_color)
+        return
+
+    ext_raw = input("Extensions to also try, comma-separated (blank = none, e.g. .php,.bak): ").strip()
+    extensions = [e if e.startswith(".") else f".{e}" for e in ext_raw.split(",") if e.strip()] or None
+
+    conc_raw = input("Concurrency (blank = 30): ").strip()
+    try:
+        concurrency = int(conc_raw) if conc_raw else 30
+    except ValueError:
+        concurrency = 30
+
+    print()
+    print_status(f"bruteforcing {len(words)} word(s) on {base_url}...", use_color)
+    try:
+        results = await brute_directory(
+            base_url, wordlist=words, extensions=extensions,
+            concurrency=concurrency, use_color=use_color, silent=False,
+        )
+    except Exception as e:
+        print_error(f"scan failed: {e}", use_color)
+        return
+
+    print()
+    if results:
+        print_status(f"{len(results)} interesting path(s) found on {base_url}", use_color)
+    else:
+        print_status(f"nothing interesting found on {base_url}", use_color)
+
+
 async def run_menu_mode():
     use_color = True
     print_banner(use_color)
@@ -224,11 +268,13 @@ async def run_menu_mode():
             await handle_subdomain_menu(use_color)
         elif choice == "2":
             await handle_port_scanner_menu(use_color)
+        elif choice == "3":
+            await handle_dir_bruteforce_menu(use_color)
         elif choice in ("0", "q", "quit", "exit"):
             print_status("bye", use_color)
             break
         else:
-            print_error("invalid choice, pick 1, 2 or 0", use_color)
+            print_error("invalid choice, pick 1, 2, 3 or 0", use_color)
 
 
 # ---------------------------------------------------------------------------
